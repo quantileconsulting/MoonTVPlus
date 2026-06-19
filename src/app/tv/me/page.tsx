@@ -3,12 +3,15 @@
 import {
   BadgeCheck,
   Clock3,
+  Copy,
   Loader2,
   LogOut,
   Menu,
+  QrCode,
   ShieldCheck,
   SlidersHorizontal,
   User,
+  Wifi,
   Volume2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -29,6 +32,20 @@ import {
 } from '@/lib/tv-preferences';
 
 import TVLayout from '@/components/tv/TVLayout';
+
+const LOCAL_REMOTE_URL_KEY = 'moontv_local_remote_url';
+
+type MoonTVLocalRemoteBridge = {
+  getRemoteUrl?: () => string;
+  showHint?: () => void;
+};
+
+declare global {
+  interface Window {
+    MoonTVLocalRemote?: MoonTVLocalRemoteBridge;
+    __MOONTV_LOCAL_REMOTE_URL?: string;
+  }
+}
 
 type AuthInfo = {
   username?: string;
@@ -71,6 +88,9 @@ export default function TVMePage() {
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState('');
+  const [localRemoteUrl, setLocalRemoteUrl] = useState('');
+  const [nativeHintAvailable, setNativeHintAvailable] = useState(false);
+  const [copyStatus, setCopyStatus] = useState('');
   const [upDownAction, setUpDownAction] = useState<TVPlayerUpDownAction>(
     DEFAULT_TV_PLAYER_UP_DOWN_ACTION
   );
@@ -82,6 +102,33 @@ export default function TVMePage() {
     setAuthInfo(auth);
     setUpDownAction(loadTVPlayerUpDownAction());
     setReady(true);
+  }, []);
+
+  useEffect(() => {
+    const readLocalRemoteUrl = () => {
+      const bridgeUrl = window.MoonTVLocalRemote?.getRemoteUrl?.() || '';
+      setNativeHintAvailable(Boolean(window.MoonTVLocalRemote?.showHint));
+      setLocalRemoteUrl(
+        bridgeUrl ||
+        window.__MOONTV_LOCAL_REMOTE_URL ||
+        localStorage.getItem(LOCAL_REMOTE_URL_KEY) ||
+        ''
+      );
+    };
+
+    const onLocalRemoteInfo = (event: Event) => {
+      const detail = (event as CustomEvent<{ url?: string }>).detail;
+      setLocalRemoteUrl(detail?.url || '');
+    };
+
+    readLocalRemoteUrl();
+    window.addEventListener('moontv:local-remote-info', onLocalRemoteInfo);
+    const timer = window.setInterval(readLocalRemoteUrl, 1500);
+
+    return () => {
+      window.removeEventListener('moontv:local-remote-info', onLocalRemoteInfo);
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -134,6 +181,22 @@ export default function TVMePage() {
           : volumeButtonRef.current;
       target?.focus({ preventScroll: true });
     });
+  };
+
+
+  const showLocalRemoteHint = () => {
+    window.MoonTVLocalRemote?.showHint?.();
+  };
+
+  const copyLocalRemoteUrl = async () => {
+    if (!localRemoteUrl) return;
+    try {
+      await navigator.clipboard?.writeText(localRemoteUrl);
+      setCopyStatus('已复制');
+    } catch {
+      setCopyStatus('请手动输入电视上的地址');
+    }
+    window.setTimeout(() => setCopyStatus(''), 2200);
   };
 
   if (!ready || !authInfo) {
@@ -232,6 +295,76 @@ export default function TVMePage() {
                 </button>
               </div>
             </aside>
+          </div>
+
+          <div className='relative mt-10 overflow-hidden rounded-[34px] border border-indigo-300/20 bg-indigo-950/35 p-7'>
+            <div className='pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_8%_0%,rgba(99,102,241,0.35),transparent_34%),radial-gradient(circle_at_95%_10%,rgba(16,185,129,0.22),transparent_28%)]' />
+            <div className='relative flex flex-col gap-7 lg:flex-row lg:items-start lg:justify-between'>
+              <div className='max-w-2xl'>
+                <div className='inline-flex items-center gap-3 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-4 py-2 text-lg font-black text-emerald-200'>
+                  <Wifi className='h-6 w-6' />
+                  局域网直连
+                </div>
+                <h2 className='mt-5 flex items-center gap-3 text-4xl font-black tracking-tight text-white'>
+                  <QrCode className='h-10 w-10 text-indigo-200' />
+                  手机扫码遥控
+                </h2>
+                <p className='mt-4 text-xl leading-relaxed text-slate-300'>
+                  在同一 Wi‑Fi 下用手机打开遥控地址，不经过服务器，方向键和播放控制更低延迟。
+                </p>
+
+                {localRemoteUrl ? (
+                  <div className='mt-6 rounded-3xl border border-white/10 bg-black/30 p-5'>
+                    <div className='text-base font-bold text-indigo-200'>遥控地址</div>
+                    <div className='mt-2 break-all font-mono text-lg font-black text-white'>
+                      {localRemoteUrl}
+                    </div>
+                    <div className='mt-5 flex flex-wrap gap-3'>
+                      {nativeHintAvailable && (
+                        <button
+                          type='button'
+                          onClick={showLocalRemoteHint}
+                          className='tv-focusable inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-4 text-lg font-black text-white outline-none transition hover:bg-indigo-500 focus:ring-4 focus:ring-indigo-300'
+                        >
+                          <QrCode className='h-6 w-6' />
+                          在电视上显示
+                        </button>
+                      )}
+                      <button
+                        type='button'
+                        onClick={copyLocalRemoteUrl}
+                        className='tv-focusable inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-white/10 px-5 py-4 text-lg font-black text-white outline-none transition hover:bg-white/15 focus:ring-4 focus:ring-indigo-300'
+                      >
+                        <Copy className='h-6 w-6' />
+                        复制地址
+                      </button>
+                    </div>
+                    {copyStatus && (
+                      <div className='mt-3 text-base font-bold text-emerald-200'>
+                        {copyStatus}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className='mt-6 rounded-3xl border border-amber-300/20 bg-amber-400/10 p-5 text-lg leading-relaxed text-amber-100'>
+                    当前页面未检测到 APK 内置局域网遥控服务。请使用新版 APK 打开电视端，或查看电视左上角的临时遥控地址。
+                  </div>
+                )}
+              </div>
+
+              {localRemoteUrl && (
+                <div className='shrink-0 rounded-[32px] border border-white/15 bg-white p-4 shadow-2xl shadow-black/40'>
+                  <img
+                    src={`/api/auth/qr/image?data=${encodeURIComponent(localRemoteUrl)}`}
+                    alt='局域网遥控地址二维码'
+                    className='h-64 w-64 rounded-2xl'
+                  />
+                  <div className='mt-3 text-center text-base font-black text-slate-950'>
+                    手机扫码打开遥控器
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className='relative mt-10 rounded-[34px] border border-white/10 bg-black/35 p-7'>
