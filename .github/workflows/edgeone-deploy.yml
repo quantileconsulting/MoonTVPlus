@@ -8,7 +8,7 @@ on:
         required: false
         default: 'moontvplus'
         type: string
-      area:
+      area: global
         description: '部署区域：overseas = 全球可用区（不含中国大陆），global = 全球可用区'
         required: false
         default: 'overseas'
